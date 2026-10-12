@@ -18,6 +18,8 @@ cmake -S "$ROOT/native" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHI
 cmake --build "$BUILD" --config Release -j "$(sysctl -n hw.ncpu)"
 
 mkdir -p "$ROOT/.local/lib"
+# Se borra antes de copiar: sobrescribir un dylib ya firmado/cargado hace que macOS mate el proceso (SIGKILL).
+rm -f "$ROOT/.local/lib/libdictado_whisper.dylib" "$ROOT/.local/lib/libdictado_macos.dylib"
 cp "$BUILD/libdictado_whisper.dylib" "$BUILD/libdictado_macos.dylib" "$ROOT/.local/lib/"
 echo "Bibliotecas nativas en $ROOT/.local/lib:"
 ls -la "$ROOT/.local/lib"
