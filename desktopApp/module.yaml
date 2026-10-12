@@ -1,13 +1,14 @@
 product: jvm/app
 
 dependencies:
-  - //shared
+  - //core
   - $compose.desktop.currentOs
-  - $compose.preview
+  - $compose.material3
   - $libs.kotlinx.coroutines.swing
   - $libs.logback.classic
+  - $libs.jna
 
 settings:
   compose: enabled
   jvm:
-    mainClass: org.example.voicetranscriptkotlin.MainKt
+    mainClass: com.dictadoai.desktop.MainKt

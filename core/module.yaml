@@ -1,0 +1,9 @@
+product:
+  type: kmp/lib
+  platforms: [jvm]
+
+dependencies:
+  - $libs.kotlinx.coroutines.core
+
+test-dependencies:
+  - $libs.kotlinx.coroutines.test

@@ -1,35 +1,17 @@
-# Kotlin Multiplatform project
+# DictadoAI (Kotlin) — app de dictado local para macOS
 
-This project is targeting Android, iOS, Desktop (JVM), Web (Wasm), built with
-the [Kotlin Toolchain](https://kotlin-toolchain.org/latest/).
+App de escritorio que graba voz, la transcribe localmente con Whisper y copia el texto al portapapeles.
+Detalles de requisitos y plan en `../PLAN.md`.
 
-- [/androidApp](./androidApp) contains the Android application.
-- [/desktopApp](./desktopApp) contains the desktop (JVM) application.
-- [/iosApp](./iosApp) contains the iOS application.
-- [/shared](./shared) holds the code shared across your applications — Compose UI,
-  business logic, and platform-specific implementations. [src](./shared/src) is for common code; the
-  sibling `src@<platform>` folders (for example `src@android`) hold code compiled only for the platform named in the
-  folder.
-- [/webApp](./webApp) contains the web application, compiled to WebAssembly with Kotlin/Wasm.
+## Módulos
+- `core/`: dominio, puertos y lógica de aplicación (Kotlin puro).
+- `desktopApp/`: adaptadores macOS, interfaz Compose y punto de entrada.
 
-The `kotlin` (macOS/Linux) and `kotlin.bat` (Windows) scripts in the project root are self-bootstrapping wrappers for
-the Kotlin Toolchain: they download the pinned toolchain version on first use, so no separate installation is required.
-Build the whole project with `./kotlin build`.
-
-### Running
-
-Run each module from the command line:
-
-- Android app: `./kotlin run -m androidApp`
-- Desktop app: `./kotlin run -m desktopApp`
-- iOS app: `./kotlin run -m iosApp`
-- Web app: `./kotlin run -m webApp`
-
-### Testing
-
-Run the project's tests with `./kotlin test`, or `./kotlin test -m <module>` for a single module.
-
----
-
-Learn more
-about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html), [Kotlin Toolchain](https://kotlin-toolchain.org/latest/), [Compose Multiplatform](https://kotlinlang.org/compose-multiplatform/), [Kotlin/Wasm](https://kotl.in/wasm/), [Ktor](https://ktor.io/).
+## Comandos (siempre desde esta carpeta)
+```sh
+source scripts/env.sh        # entorno contenido en .local/
+scripts/setup-tools.sh       # una vez: descarga CMake a .local/
+scripts/kt build             # compilar
+scripts/kt test              # pruebas
+scripts/kt run -m desktopApp # ejecutar
+```
