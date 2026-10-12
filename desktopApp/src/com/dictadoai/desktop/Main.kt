@@ -10,6 +10,10 @@ import javax.swing.SwingUtilities
 import com.dictadoai.desktop.adapter.audio.WavReader
 import com.dictadoai.desktop.adapter.whisper.WhisperCppEngine
 import com.dictadoai.desktop.config.AppPaths
+import com.dictadoai.desktop.adapter.audio.JavaSoundRecorder
+import com.dictadoai.desktop.adapter.audio.WavWriter
+import com.dictadoai.desktop.adapter.macos.MacosMicrophonePermission
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.system.exitProcess
@@ -18,6 +22,10 @@ import kotlin.system.measureTimeMillis
 fun main(args: Array<String>) {
     if (args.firstOrNull() == "--transcribe") {
         transcribeFile(File(args.getOrNull(1) ?: error("Uso: --transcribe <archivo.wav>")))
+        return
+    }
+    if (args.firstOrNull() == "--record") {
+        recordAndTranscribe(args.getOrNull(1)?.toInt() ?: 5)
         return
     }
     // Provisional (fase 4): prototipo de la bolita. Se reemplaza por la raíz de composición en la fase 6.
@@ -69,3 +77,44 @@ private fun transcribeFile(wav: File): Unit = runBlocking {
 private fun rssMb(): Long =
     ProcessBuilder("ps", "-o", "rss=", "-p", ProcessHandle.current().pid().toString())
         .start().inputStream.bufferedReader().readText().trim().toLong() / 1024
+
+/** Modo de diagnóstico: pide el micrófono, graba N segundos (con una pausa de prueba) y transcribe. */
+private fun recordAndTranscribe(seconds: Int): Unit = runBlocking {
+    val paths = AppPaths.resolve()
+    val permission = MacosMicrophonePermission(MacosBridge.load(paths))
+    println("Permiso de micrófono (si es la primera vez, macOS mostrará un aviso: pulsa Permitir)...")
+    if (!permission.ensureGranted()) {
+        println("PERMISO DENEGADO. Actívalo en Ajustes del Sistema > Privacidad y seguridad > Micrófono.")
+        exitProcess(1)
+    }
+    val engine = WhisperCppEngine(paths)
+    println("Cargando modelo...")
+    engine.load()
+
+    val recorder = JavaSoundRecorder()
+    beep("Ping")
+    println(">>> HABLA AHORA durante $seconds s (a mitad hago 2 s de pausa: no hables en ese momento)")
+    recorder.start()
+    val half = seconds * 500L
+    delay(half)
+    println(">>> PAUSA 2 s (grabado: ${recorder.recordedMillis.value} ms)")
+    recorder.pause(); beep("Tink"); delay(2000); beep("Tink"); recorder.resume()
+    println(">>> sigue grabando")
+    delay(half)
+    val clip = recorder.stop()
+    beep("Pop")
+    println("Grabado: ${clip.durationMillis} ms, RMS=${"%.4f".format(clip.rms())}")
+
+    val wav = File(paths.dataDir, "ultima-grabacion.wav").also { it.parentFile.mkdirs() }
+    WavWriter.write(clip, wav)
+    println("Copia de depuración: $wav")
+
+    println("TEXTO: " + engine.transcribe(clip, "es"))
+    engine.close()
+    exitProcess(0)
+}
+
+/** Sonido del sistema para marcar el inicio y el fin de la grabación de prueba (no se graba). */
+private fun beep(name: String) {
+    ProcessBuilder("afplay", "/System/Library/Sounds/$name.aiff").start().waitFor()
+}

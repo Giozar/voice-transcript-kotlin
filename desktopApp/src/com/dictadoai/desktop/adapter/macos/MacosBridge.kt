@@ -12,6 +12,8 @@ interface MacosBridge : Library {
     fun dictado_macos_configure_floating(title: String, info: ByteArray, infoLen: Int): Int
     fun dictado_macos_frontmost_app(buf: ByteArray, len: Int): Int
     fun dictado_macos_focus_state(buf: ByteArray, len: Int): Int
+    fun dictado_macos_mic_status(): Int
+    fun dictado_macos_request_mic(): Int
     fun dictado_macos_start_focus_guard()
     fun dictado_macos_restore_focus()
 

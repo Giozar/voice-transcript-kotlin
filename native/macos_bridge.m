@@ -112,3 +112,21 @@ int dictado_macos_focus_state(char *buf, int len) {
     });
     return rc;
 }
+
+// Permiso de micrófono. Estado: 0 = sin decidir, 1 = restringido, 2 = denegado, 3 = autorizado.
+int dictado_macos_mic_status(void) {
+    return (int)[AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
+}
+
+// Pide el permiso (muestra el diálogo de macOS la primera vez) y espera la respuesta.
+// No debe llamarse desde el hilo principal. Devuelve 1 si se concedió.
+int dictado_macos_request_mic(void) {
+    __block int granted = 0;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL g) {
+        granted = g ? 1 : 0;
+        dispatch_semaphore_signal(sem);
+    }];
+    dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+    return granted;
+}
