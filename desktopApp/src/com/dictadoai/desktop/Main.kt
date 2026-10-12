@@ -10,6 +10,19 @@ import javax.swing.SwingUtilities
 import com.dictadoai.desktop.adapter.audio.WavReader
 import com.dictadoai.desktop.adapter.whisper.WhisperCppEngine
 import com.dictadoai.desktop.config.AppPaths
+import com.dictadoai.core.application.DictationController
+import com.dictadoai.core.domain.BubblePosition
+import com.dictadoai.desktop.adapter.clipboard.AwtClipboardWriter
+import com.dictadoai.desktop.adapter.settings.PropertiesBubblePositionStore
+import com.dictadoai.desktop.ui.PanelWindow
+import com.dictadoai.desktop.ui.isOnAnyScreen
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.swing.Swing
+import java.awt.Point
 import com.dictadoai.desktop.adapter.audio.JavaSoundRecorder
 import com.dictadoai.desktop.adapter.audio.WavWriter
 import com.dictadoai.desktop.adapter.macos.MacosMicrophonePermission
@@ -28,31 +41,7 @@ fun main(args: Array<String>) {
         recordAndTranscribe(args.getOrNull(1)?.toInt() ?: 5)
         return
     }
-    // Provisional (fase 4): prototipo de la bolita. Se reemplaza por la raíz de composición en la fase 6.
-    runBubblePrototype(useFocusGuard = "--focus-guard" in args)
-}
-
-/** Prototipo de la fase 4: muestra la bolita y diagnostica el foco al hacer clic. */
-private fun runBubblePrototype(useFocusGuard: Boolean) {
-    System.setProperty("apple.awt.UIElement", "true") // sin icono en el Dock; antes de iniciar AWT
-    val mac = MacosBridge.load(AppPaths.resolve())
-    val bubble = BubbleWindow(
-        onClick = {
-            println("[clic] ${mac.focusState()}")
-            if (useFocusGuard) mac.dictado_macos_restore_focus()
-            if (useFocusGuard) println("[clic] tras restaurar foco: ${mac.frontmostApp()}")
-        },
-        onMoved = { x, y -> println("[mover] bolita en ($x, $y)") },
-    )
-    SwingUtilities.invokeLater {
-        bubble.create()
-        bubble.show()
-        val result = mac.configureFloating(BubbleWindow.TITLE)
-        println("[ventana] código=${result.code} (0=NSPanel no activante, 2=NSWindow normal) ${result.info}")
-        if (useFocusGuard) mac.dictado_macos_start_focus_guard()
-        TrayMenu(onExit = { kotlin.system.exitProcess(0) }).install()
-        println("[listo] app al frente ahora: ${mac.frontmostApp()}")
-    }
+    runApp()
 }
 
 /** Modo de diagnóstico sin interfaz: transcribe un WAV e imprime texto, tiempos y memoria. */
@@ -117,4 +106,48 @@ private fun recordAndTranscribe(seconds: Int): Unit = runBlocking {
 /** Sonido del sistema para marcar el inicio y el fin de la grabación de prueba (no se graba). */
 private fun beep(name: String) {
     ProcessBuilder("afplay", "/System/Library/Sounds/$name.aiff").start().waitFor()
+}
+
+/** Raíz de composición: única clase que conoce a todos los adaptadores y los une con el controlador. */
+private fun runApp() {
+    System.setProperty("apple.awt.UIElement", "true") // sin icono en el Dock; antes de iniciar AWT
+    val paths = AppPaths.resolve()
+    val mac = MacosBridge.load(paths)
+    val positionStore = PropertiesBubblePositionStore(File(paths.dataDir, "config.properties"))
+
+    SwingUtilities.invokeLater {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Swing)
+        val clipboard = AwtClipboardWriter()
+        val controller = DictationController(
+            recorder = JavaSoundRecorder(),
+            engine = WhisperCppEngine(paths),
+            clipboard = clipboard,
+            permission = MacosMicrophonePermission(mac),
+            scope = scope,
+        )
+
+        lateinit var panel: PanelWindow
+        val bubble = BubbleWindow(
+            state = controller.state,
+            onClick = { controller.onBubbleClick() },
+            onMoved = { x, y -> positionStore.save(BubblePosition(x, y)) },
+            onBoundsChanged = { panel.reposition() },
+        )
+        panel = PanelWindow(controller, clipboard, mac, bubble)
+
+        val saved = positionStore.load()?.let { Point(it.x, it.y) }?.takeIf { isOnAnyScreen(it) }
+        bubble.create(saved)
+        panel.create()
+        bubble.show()
+        mac.configureFloating(BubbleWindow.TITLE)
+        mac.dictado_macos_start_focus_guard()
+
+        scope.launch { controller.state.collect { panel.update(it) } }
+        TrayMenu(onExit = {
+            positionStore.save(BubblePosition(bubble.window.x, bubble.window.y))
+            controller.shutdown()
+            exitProcess(0)
+        }).install()
+        controller.start()
+    }
 }

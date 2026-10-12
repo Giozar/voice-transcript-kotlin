@@ -29,3 +29,7 @@ foreach(t dictado_whisper dictado_macos)
     BUILD_WITH_INSTALL_RPATH ON
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 endforeach()
+
+# Objective-C con conteo automático de referencias (ARC): sin esto, los objetos guardados en variables
+# estáticas (p. ej. la última app activa) se liberan y provocan un cierre inesperado.
+set_source_files_properties(macos_bridge.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")

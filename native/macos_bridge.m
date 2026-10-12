@@ -130,3 +130,8 @@ int dictado_macos_request_mic(void) {
     dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
     return granted;
 }
+
+// Activa esta app (se usa solo al editar el texto, cuando el panel necesita recibir teclado).
+void dictado_macos_activate_app(void) {
+    on_main(^{ [NSApp activateIgnoringOtherApps:YES]; });
+}
