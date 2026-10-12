@@ -4,12 +4,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import com.dictadoai.core.Version
 
+// Provisional: se reemplaza por la raíz de composición en la fase 6.
 fun main() = application {
-    Window(onCloseRequest = ::exitApplication, title = Version.NAME) {
+    Window(onCloseRequest = ::exitApplication, title = "DictadoAI") {
         MaterialTheme {
-            Text(Version.NAME)
+            Text("DictadoAI")
         }
     }
 }
