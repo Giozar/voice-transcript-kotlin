@@ -6,3 +6,8 @@
 !**/module.xcodeproj/project.xcworkspace/
 **/xcshareddata/WorkspaceSettings.xcsettings
 xcuserdata
+/.local/
+/native/build/
+.DS_Store
+.kotlin/
+build/

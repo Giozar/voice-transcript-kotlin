@@ -1,0 +1,5 @@
+#!/bin/sh
+# Wrapper del Kotlin Toolchain: carga el entorno contenido y fija la caché compartida dentro de .local/
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+. "$ROOT/scripts/env.sh" >/dev/null 2>&1
+exec "$ROOT/kotlin" --shared-cache-dir="$ROOT/.local/kotlin-caches" "$@"
