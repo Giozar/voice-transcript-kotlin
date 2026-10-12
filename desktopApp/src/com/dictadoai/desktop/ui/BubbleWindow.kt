@@ -112,8 +112,8 @@ class BubbleWindow(
         DictationState.LoadingModel -> DictadoColors.Loading
         is DictationState.ModelError -> DictadoColors.Error
         DictationState.Idle -> DictadoColors.Idle
-        DictationState.Starting, DictationState.Recording -> DictadoColors.Recording
-        DictationState.Paused -> DictadoColors.Paused
+        is DictationState.Starting, is DictationState.Recording -> DictadoColors.Recording
+        is DictationState.Paused -> DictadoColors.Paused
         is DictationState.Transcribing -> DictadoColors.Transcribing
         is DictationState.Result -> DictadoColors.Result
         is DictationState.NoSpeech, is DictationState.Failure -> DictadoColors.Warning

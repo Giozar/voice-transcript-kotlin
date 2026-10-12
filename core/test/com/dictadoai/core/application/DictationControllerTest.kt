@@ -2,6 +2,8 @@ package com.dictadoai.core.application
 
 import com.dictadoai.core.domain.DictationState.*
 import com.dictadoai.core.domain.FailureKind
+import com.dictadoai.core.domain.Notice
+import com.dictadoai.core.domain.Purpose
 import com.dictadoai.core.port.AudioClip
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -23,15 +25,12 @@ class DictationControllerTest {
     private val clipboard = FakeClipboard()
     private val permission = FakePermission()
 
-    private fun TestScope.controller(maxMillis: Long = 600_000) =
-        DictationController(
-            recorder, engine, clipboard, permission,
-            CoroutineScope(UnconfinedTestDispatcher(testScheduler) + SupervisorJob()), "es", maxMillis,
-        )
+    private fun TestScope.controller(maxMillis: Long = 600_000) = DictationController(
+        recorder, engine, clipboard, permission,
+        CoroutineScope(UnconfinedTestDispatcher(testScheduler) + SupervisorJob()), "es", maxMillis,
+    )
 
-    private suspend fun TestScope.ready(c: DictationController) {
-        c.start(); advanceUntilIdle()
-    }
+    private suspend fun TestScope.ready(c: DictationController) { c.start(); advanceUntilIdle() }
 
     private suspend fun TestScope.recording(c: DictationController) {
         ready(c); c.onBubbleClick(); advanceUntilIdle()
@@ -54,27 +53,78 @@ class DictationControllerTest {
         assertFalse(recorder.started)
     }
 
-    @Test fun `full flow records, transcribes and copies`() = runTest {
+    @Test fun `full flow records, transcribes, fills the document and copies`() = runTest {
         val c = controller()
         recording(c)
-        assertEquals(Recording, c.state.value)
+        assertEquals(Recording(resumed = false), c.state.value)
         assertTrue(recorder.started)
 
         c.finish(); advanceUntilIdle()
-        assertEquals(Result("hola mundo", false), c.state.value)
+        assertEquals(Result(limitReached = false), c.state.value)
+        assertEquals("hola mundo", c.document.value.text)
         assertEquals(listOf("hola mundo"), clipboard.copied)
     }
 
-    @Test fun `pause and resume reach the recorder`() = runTest {
+    @Test fun `pausing transcribes the segment so it can be reviewed`() = runTest {
         val c = controller()
         recording(c)
-        c.pause()
-        assertEquals(Paused, c.state.value); assertTrue(recorder.paused)
-        c.resume()
-        assertEquals(Recording, c.state.value); assertFalse(recorder.paused)
+        c.pause(); advanceUntilIdle()
+        assertEquals(Paused(Notice.NONE), c.state.value)
+        assertEquals("hola mundo", c.document.value.text)
+        assertEquals(listOf("hola mundo"), clipboard.copied)
     }
 
-    @Test fun `cancel discards audio and does not copy`() = runTest {
+    @Test fun `resuming records a new segment and inserts it at the cursor with a space`() = runTest {
+        engine.results = mutableListOf("hola", "mundo")
+        val c = controller()
+        recording(c)
+        c.pause(); advanceUntilIdle()
+        c.resume(); advanceUntilIdle()
+        assertEquals(Recording(resumed = true), c.state.value)
+        assertEquals(2, recorder.startCount)
+
+        c.finish(); advanceUntilIdle()
+        assertEquals("hola mundo", c.document.value.text)
+        assertEquals(listOf("hola", "hola mundo"), clipboard.copied)
+    }
+
+    @Test fun `new text goes where the cursor is after the user edited`() = runTest {
+        engine.results = mutableListOf("uno tres", "dos")
+        val c = controller()
+        recording(c)
+        c.pause(); advanceUntilIdle()
+        c.updateDocument("uno tres", selectionStart = 3, selectionEnd = 3) // el usuario mueve el cursor tras "uno"
+        c.resume(); advanceUntilIdle()
+        c.finish(); advanceUntilIdle()
+        assertEquals("uno dos tres", c.document.value.text)
+    }
+
+    @Test fun `continuing from the result keeps and extends the text`() = runTest {
+        engine.results = mutableListOf("primera", "segunda")
+        val c = controller()
+        recording(c)
+        c.finish(); advanceUntilIdle()
+        c.updateDocument("Primera editada.", 16, 16)
+        c.continueDictation(); advanceUntilIdle()
+        assertEquals(Recording(resumed = true), c.state.value)
+        c.finish(); advanceUntilIdle()
+        assertEquals("Primera editada. segunda", c.document.value.text)
+        assertEquals("Primera editada. segunda", clipboard.copied.last())
+    }
+
+    @Test fun `finishing from pause does not need new audio and copies the text`() = runTest {
+        val c = controller()
+        recording(c)
+        c.pause(); advanceUntilIdle()
+        clipboard.copied.clear()
+        c.updateDocument("texto editado", 13, 13)
+        c.finish(); advanceUntilIdle()
+        assertEquals(Result(limitReached = false), c.state.value)
+        assertEquals(1, engine.transcribeCalls)
+        assertEquals(listOf("texto editado"), clipboard.copied)
+    }
+
+    @Test fun `cancel on the first segment discards everything`() = runTest {
         val c = controller()
         recording(c)
         c.cancel(); advanceUntilIdle()
@@ -84,7 +134,44 @@ class DictationControllerTest {
         assertTrue(clipboard.copied.isEmpty())
     }
 
-    @Test fun `silence skips the engine and leaves the clipboard untouched`() = runTest {
+    @Test fun `cancel on a later segment keeps the session text`() = runTest {
+        val c = controller()
+        recording(c)
+        c.pause(); advanceUntilIdle()
+        c.resume(); advanceUntilIdle()
+        c.cancel(); advanceUntilIdle()
+        assertEquals(Paused(Notice.NONE), c.state.value)
+        assertEquals("hola mundo", c.document.value.text)
+    }
+
+    @Test fun `discarding from pause clears the session`() = runTest {
+        val c = controller()
+        recording(c)
+        c.pause(); advanceUntilIdle()
+        c.cancel()
+        assertEquals(Idle, c.state.value)
+        assertEquals("", c.document.value.text)
+    }
+
+    @Test fun `a new session starts with an empty document`() = runTest {
+        val c = controller()
+        recording(c)
+        c.finish(); advanceUntilIdle()
+        c.onBubbleClick(); advanceUntilIdle()
+        assertEquals(Recording(resumed = false), c.state.value)
+        assertEquals("", c.document.value.text)
+    }
+
+    @Test fun `closing the result clears the session`() = runTest {
+        val c = controller()
+        recording(c)
+        c.finish(); advanceUntilIdle()
+        c.close()
+        assertEquals(Idle, c.state.value)
+        assertEquals("", c.document.value.text)
+    }
+
+    @Test fun `silence on the first segment is no speech and leaves the clipboard untouched`() = runTest {
         recorder.clip = AudioClip(FloatArray(16_000)) // todo ceros
         val c = controller()
         recording(c)
@@ -94,8 +181,19 @@ class DictationControllerTest {
         assertTrue(clipboard.copied.isEmpty())
     }
 
+    @Test fun `silence on a later segment keeps the text and warns`() = runTest {
+        val c = controller()
+        recording(c)
+        c.pause(); advanceUntilIdle()
+        recorder.clip = AudioClip(FloatArray(16_000))
+        c.resume(); advanceUntilIdle()
+        c.finish(); advanceUntilIdle()
+        assertEquals(Result(false, Notice.NO_SPEECH), c.state.value)
+        assertEquals("hola mundo", c.document.value.text)
+    }
+
     @Test fun `hallucinated text counts as no speech`() = runTest {
-        engine.result = "[BLANK_AUDIO]"
+        engine.results = mutableListOf("[BLANK_AUDIO]")
         val c = controller()
         recording(c)
         c.finish(); advanceUntilIdle()
@@ -103,12 +201,12 @@ class DictationControllerTest {
         assertTrue(clipboard.copied.isEmpty())
     }
 
-    @Test fun `recording limit stops and transcribes`() = runTest {
+    @Test fun `recording limit stops and transcribes the segment`() = runTest {
         val c = controller(maxMillis = 1000)
         recording(c)
         recorder.setRecorded(1000); advanceUntilIdle()
-        assertEquals(Result("hola mundo", true), c.state.value)
-        assertEquals(listOf("hola mundo"), clipboard.copied)
+        assertEquals(Result(limitReached = true), c.state.value)
+        assertEquals("hola mundo", c.document.value.text)
     }
 
     @Test fun `denied permission shows a failure and never records`() = runTest {
@@ -130,7 +228,7 @@ class DictationControllerTest {
         assertEquals(Failure(FailureKind.MIC_UNAVAILABLE), c.state.value)
     }
 
-    @Test fun `transcription error shows a failure and does not copy`() = runTest {
+    @Test fun `transcription error on the first segment shows a failure`() = runTest {
         engine.transcribeError = RuntimeException("boom")
         val c = controller()
         recording(c)
@@ -139,12 +237,15 @@ class DictationControllerTest {
         assertTrue(clipboard.copied.isEmpty())
     }
 
-    @Test fun `clicking the bubble from a result starts a new dictation`() = runTest {
+    @Test fun `transcription error on a later segment keeps the text`() = runTest {
         val c = controller()
         recording(c)
+        c.pause(); advanceUntilIdle()
+        c.resume(); advanceUntilIdle()
+        engine.transcribeError = RuntimeException("boom")
         c.finish(); advanceUntilIdle()
-        c.onBubbleClick(); advanceUntilIdle()
-        assertEquals(Recording, c.state.value)
+        assertEquals(Result(false, Notice.TRANSCRIPTION_FAILED), c.state.value)
+        assertEquals("hola mundo", c.document.value.text)
     }
 
     @Test fun `clicks while transcribing are ignored`() = runTest {
@@ -153,11 +254,11 @@ class DictationControllerTest {
         val c = controller()
         recording(c)
         c.finish()
-        assertEquals(Transcribing(false), c.state.value)
-        c.onBubbleClick(); c.cancel(); c.pause()
-        assertEquals(Transcribing(false), c.state.value)
+        assertEquals(Transcribing(Purpose.FINISH, false), c.state.value)
+        c.onBubbleClick(); c.cancel(); c.pause(); c.continueDictation()
+        assertEquals(Transcribing(Purpose.FINISH, false), c.state.value)
         gate.complete(Unit); advanceUntilIdle()
-        assertEquals(Result("hola mundo", false), c.state.value)
+        assertEquals(Result(false), c.state.value)
     }
 
     @Test fun `shutdown releases the engine`() = runTest {

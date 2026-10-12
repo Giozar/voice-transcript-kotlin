@@ -30,7 +30,6 @@ class JavaSoundRecorder : AudioRecorder {
     private var count = 0
 
     @Volatile private var running = false
-    @Volatile private var paused = false
 
     override suspend fun start() = withContext(Dispatchers.IO) {
         check(line == null) { "Ya se está grabando" }
@@ -41,15 +40,11 @@ class JavaSoundRecorder : AudioRecorder {
             samples = ShortArray(rate * 30) // se amplía según haga falta
             count = 0
             _recordedMillis.value = 0
-            paused = false
             running = true
         }
         opened.start()
         thread = Thread({ readLoop(opened) }, "dictado-recorder").apply { isDaemon = true; start() }
     }
-
-    override fun pause() { paused = true }
-    override fun resume() { paused = false }
 
     override fun stop(): AudioClip {
         val rate: Int
@@ -83,7 +78,6 @@ class JavaSoundRecorder : AudioRecorder {
         while (running) {
             val n = l.read(buf, 0, buf.size)
             if (n <= 0) continue
-            if (paused) continue // se sigue leyendo para vaciar el búfer, pero no se acumula
             synchronized(lock) {
                 val shorts = n / 2
                 if (count + shorts > samples.size) samples = samples.copyOf(maxOf(samples.size * 2, count + shorts))

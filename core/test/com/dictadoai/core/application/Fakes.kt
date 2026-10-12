@@ -17,7 +17,7 @@ class FakeRecorder : AudioRecorder {
     var micAvailable = true
     var clip = AudioClip(FloatArray(16_000) { 0.5f }) // 1 s de audio con nivel claramente por encima del silencio
     var started = false
-    var paused = false
+    var startCount = 0
     var cancelled = false
 
     fun setRecorded(ms: Long) { millis.value = ms }
@@ -25,10 +25,10 @@ class FakeRecorder : AudioRecorder {
     override suspend fun start() {
         if (!micAvailable) throw MicUnavailableException()
         started = true
+        startCount++
+        millis.value = 0
     }
 
-    override fun pause() { paused = true }
-    override fun resume() { paused = false }
     override fun stop(): AudioClip { started = false; return clip }
     override fun cancel() { started = false; cancelled = true }
 }
@@ -36,7 +36,9 @@ class FakeRecorder : AudioRecorder {
 class FakeEngine : TranscriptionEngine {
     var loadError: Exception? = null
     var transcribeError: Exception? = null
-    var result = "hola mundo"
+    /** Textos que devuelve, uno por llamada (el último se repite). */
+    var results = mutableListOf("hola mundo")
+    private var call = 0
     var transcribeCalls = 0
     var closed = false
 
@@ -49,7 +51,7 @@ class FakeEngine : TranscriptionEngine {
         transcribeCalls++
         gate?.await()
         transcribeError?.let { throw it }
-        return result
+        return results[minOf(call++, results.size - 1)]
     }
 
     override fun close() { closed = true }

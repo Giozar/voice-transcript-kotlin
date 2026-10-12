@@ -67,7 +67,7 @@ private fun rssMb(): Long =
     ProcessBuilder("ps", "-o", "rss=", "-p", ProcessHandle.current().pid().toString())
         .start().inputStream.bufferedReader().readText().trim().toLong() / 1024
 
-/** Modo de diagnóstico: pide el micrófono, graba N segundos (con una pausa de prueba) y transcribe. */
+/** Modo de diagnóstico: pide el micrófono, graba N segundos y transcribe. */
 private fun recordAndTranscribe(seconds: Int): Unit = runBlocking {
     val paths = AppPaths.resolve()
     val permission = MacosMicrophonePermission(MacosBridge.load(paths))
@@ -82,14 +82,9 @@ private fun recordAndTranscribe(seconds: Int): Unit = runBlocking {
 
     val recorder = JavaSoundRecorder()
     beep("Ping")
-    println(">>> HABLA AHORA durante $seconds s (a mitad hago 2 s de pausa: no hables en ese momento)")
+    println(">>> HABLA AHORA durante $seconds s")
     recorder.start()
-    val half = seconds * 500L
-    delay(half)
-    println(">>> PAUSA 2 s (grabado: ${recorder.recordedMillis.value} ms)")
-    recorder.pause(); beep("Tink"); delay(2000); beep("Tink"); recorder.resume()
-    println(">>> sigue grabando")
-    delay(half)
+    delay(seconds * 1000L)
     val clip = recorder.stop()
     beep("Pop")
     println("Grabado: ${clip.durationMillis} ms, RMS=${"%.4f".format(clip.rms())}")

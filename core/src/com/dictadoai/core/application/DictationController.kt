@@ -5,6 +5,8 @@ import com.dictadoai.core.domain.DictationState
 import com.dictadoai.core.domain.DictationStateMachine
 import com.dictadoai.core.domain.RecordingLimits
 import com.dictadoai.core.domain.TranscriptCleaner
+import com.dictadoai.core.domain.TranscriptDocument
+import com.dictadoai.core.domain.TranscriptInserter
 import com.dictadoai.core.port.AudioRecorder
 import com.dictadoai.core.port.ClipboardWriter
 import com.dictadoai.core.port.MicUnavailableException
@@ -21,6 +23,7 @@ import kotlinx.coroutines.launch
 /**
  * Orquesta el dictado. Solo conoce puertos (interfaces); no sabe nada de macOS, Whisper ni de la interfaz.
  *
+ * Una sesión es un [document] editable: al pausar o terminar, lo grabado se transcribe y se inserta en el cursor.
  * Debe usarse desde un único hilo (el de [scope], en la app real el hilo de la interfaz).
  */
 class DictationController(
@@ -35,7 +38,10 @@ class DictationController(
     private val _state = MutableStateFlow<DictationState>(DictationState.LoadingModel)
     val state: StateFlow<DictationState> = _state
 
-    /** Tiempo grabado, para el cronómetro. */
+    private val _document = MutableStateFlow(TranscriptDocument.EMPTY)
+    val document: StateFlow<TranscriptDocument> = _document
+
+    /** Tiempo grabado en el fragmento actual, para el cronómetro. */
     val elapsedMillis: StateFlow<Long> get() = recorder.recordedMillis
 
     private var limitJob: Job? = null
@@ -54,14 +60,65 @@ class DictationController(
         }
     }
 
+    /** Clic en la bolita: empieza una sesión nueva (el texto anterior se descarta). */
     fun onBubbleClick() {
-        if (!dispatch(DictationEvent.BubbleClicked)) return
+        if (dispatch(DictationEvent.BubbleClicked)) startSegment()
+    }
+
+    /** Sigue dictando sobre el texto actual (desde el resultado). */
+    fun continueDictation() {
+        if (dispatch(DictationEvent.ContinueRequested)) startSegment()
+    }
+
+    /** Pausa: transcribe lo grabado hasta ahora para poder revisarlo. */
+    fun pause() {
+        if (dispatch(DictationEvent.PauseRequested)) beginTranscription()
+    }
+
+    /** Reanuda la sesión en pausa grabando un fragmento nuevo. */
+    fun resume() {
+        if (dispatch(DictationEvent.ResumeRequested)) startSegment()
+    }
+
+    fun finish() {
+        val wasPaused = _state.value is DictationState.Paused
+        if (!dispatch(DictationEvent.FinishRequested)) return
+        if (wasPaused) copyDocument() // no hay audio nuevo que transcribir
+        else beginTranscription()
+    }
+
+    /** Cancela el fragmento en curso; si la sesión ya tenía texto, se conserva. En pausa, descarta la sesión. */
+    fun cancel() {
+        if (dispatch(DictationEvent.CancelRequested)) {
+            limitJob?.cancel()
+            recorder.cancel()
+        }
+    }
+
+    /** Cierra el panel (descarta la sesión). */
+    fun close() {
+        dispatch(DictationEvent.CloseRequested)
+    }
+
+    /** La interfaz informa de cada cambio en el texto o en la posición del cursor. */
+    fun updateDocument(text: String, selectionStart: Int, selectionEnd: Int) {
+        _document.value = TranscriptDocument(text, selectionStart, selectionEnd)
+    }
+
+    /** Libera recursos al salir de la app. */
+    fun shutdown() {
+        limitJob?.cancel()
+        recorder.cancel()
+        engine.close()
+    }
+
+    private fun startSegment() {
         scope.launch {
             if (!permission.ensureGranted()) {
                 dispatch(DictationEvent.MicDenied)
                 return@launch
             }
-            if (_state.value != DictationState.Starting) return@launch // cancelado mientras se pedía el permiso
+            if (_state.value !is DictationState.Starting) return@launch // cancelado mientras se pedía el permiso
             try {
                 recorder.start()
             } catch (e: MicUnavailableException) {
@@ -76,37 +133,6 @@ class DictationController(
         }
     }
 
-    fun pause() {
-        if (dispatch(DictationEvent.PauseRequested)) recorder.pause()
-    }
-
-    fun resume() {
-        if (dispatch(DictationEvent.ResumeRequested)) recorder.resume()
-    }
-
-    fun finish() {
-        if (dispatch(DictationEvent.FinishRequested)) beginTranscription()
-    }
-
-    fun cancel() {
-        if (dispatch(DictationEvent.CancelRequested)) {
-            limitJob?.cancel()
-            recorder.cancel()
-        }
-    }
-
-    /** Cierra el panel de resultado o de error. */
-    fun close() {
-        dispatch(DictationEvent.CloseRequested)
-    }
-
-    /** Libera recursos al salir de la app. */
-    fun shutdown() {
-        limitJob?.cancel()
-        recorder.cancel()
-        engine.close()
-    }
-
     private fun watchLimit() {
         limitJob?.cancel()
         limitJob = scope.launch {
@@ -119,24 +145,38 @@ class DictationController(
         limitJob?.cancel()
         val clip = recorder.stop()
         scope.launch {
-            if (clip.rms() < RecordingLimits.SILENCE_RMS) {
-                dispatch(DictationEvent.TranscriptionDone(""))
-                return@launch
+            val piece = if (clip.rms() < RecordingLimits.SILENCE_RMS) {
+                "" // silencio: no se llama al motor
+            } else {
+                try {
+                    TranscriptCleaner.clean(engine.transcribe(clip, language))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    dispatch(DictationEvent.TranscriptionFailed(sessionHasText = _document.value.text.isNotBlank()))
+                    return@launch
+                }
             }
-            val text = try {
-                TranscriptCleaner.clean(engine.transcribe(clip, language))
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                dispatch(DictationEvent.TranscriptionFailed)
-                return@launch
+            val hasSpeech = piece.isNotBlank()
+            if (hasSpeech) {
+                _document.value = TranscriptInserter.insert(_document.value, piece)
+                copyDocument()
             }
-            if (dispatch(DictationEvent.TranscriptionDone(text)) && text.isNotBlank()) clipboard.copy(text)
+            dispatch(DictationEvent.TranscriptionDone(hasSpeech, sessionHasText = _document.value.text.isNotBlank()))
         }
+    }
+
+    private fun copyDocument() {
+        val text = _document.value.text
+        if (text.isNotBlank()) clipboard.copy(text)
     }
 
     private fun dispatch(event: DictationEvent): Boolean {
         val next = DictationStateMachine.transition(_state.value, event) ?: return false
+        // Al volver a la bolita o empezar una sesión nueva, el texto anterior se descarta.
+        if (next == DictationState.Idle || next == DictationState.Starting(resumed = false)) {
+            _document.value = TranscriptDocument.EMPTY
+        }
         _state.value = next
         return true
     }

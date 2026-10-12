@@ -17,44 +17,61 @@ object DictationStateMachine {
         is ModelError -> null
 
         Idle -> when (event) {
-            BubbleClicked -> Starting
+            BubbleClicked -> Starting(resumed = false)
             else -> null
         }
 
-        Starting -> when (event) {
-            MicReady -> Recording
+        is Starting -> when (event) {
+            MicReady -> Recording(state.resumed)
             MicDenied -> Failure(FailureKind.MIC_DENIED)
             MicUnavailable -> Failure(FailureKind.MIC_UNAVAILABLE)
-            CancelRequested -> Idle
+            CancelRequested -> afterCancelledSegment(state.resumed)
             else -> null
         }
 
-        Recording -> when (event) {
-            PauseRequested -> Paused
-            FinishRequested -> Transcribing(limitReached = false)
-            LimitReached -> Transcribing(limitReached = true)
-            CancelRequested -> Idle
+        is Recording -> when (event) {
+            PauseRequested -> Transcribing(Purpose.PAUSE, limitReached = false)
+            FinishRequested -> Transcribing(Purpose.FINISH, limitReached = false)
+            LimitReached -> Transcribing(Purpose.FINISH, limitReached = true)
+            CancelRequested -> afterCancelledSegment(state.resumed)
             else -> null
         }
 
-        Paused -> when (event) {
-            ResumeRequested -> Recording
-            FinishRequested -> Transcribing(limitReached = false)
-            CancelRequested -> Idle
+        is Paused -> when (event) {
+            ResumeRequested -> Starting(resumed = true)
+            FinishRequested -> Result(limitReached = false)
+            CancelRequested, CloseRequested -> Idle
             else -> null
         }
 
         is Transcribing -> when (event) {
-            is TranscriptionDone ->
-                if (event.text.isBlank()) NoSpeech(state.limitReached) else Result(event.text, state.limitReached)
-            TranscriptionFailed -> Failure(FailureKind.TRANSCRIPTION_FAILED)
+            is TranscriptionDone -> when {
+                !event.hasSpeech && !event.sessionHasText -> NoSpeech(state.limitReached)
+                state.purpose == Purpose.PAUSE -> Paused(if (event.hasSpeech) Notice.NONE else Notice.NO_SPEECH)
+                else -> Result(state.limitReached, if (event.hasSpeech) Notice.NONE else Notice.NO_SPEECH)
+            }
+            is TranscriptionFailed -> when {
+                !event.sessionHasText -> Failure(FailureKind.TRANSCRIPTION_FAILED)
+                state.purpose == Purpose.PAUSE -> Paused(Notice.TRANSCRIPTION_FAILED)
+                else -> Result(state.limitReached, Notice.TRANSCRIPTION_FAILED)
+            }
             else -> null
         }
 
-        is Result, is NoSpeech, is Failure -> when (event) {
+        is Result -> when (event) {
             CloseRequested -> Idle
-            BubbleClicked -> Starting
+            BubbleClicked -> Starting(resumed = false) // sesión nueva: el texto anterior se descarta
+            ContinueRequested -> Starting(resumed = true)
+            else -> null
+        }
+
+        is NoSpeech, is Failure -> when (event) {
+            CloseRequested -> Idle
+            BubbleClicked -> Starting(resumed = false)
             else -> null
         }
     }
+
+    /** Cancelar un fragmento: si la sesión ya tenía texto se conserva (en pausa); si no, se vuelve a la bolita. */
+    private fun afterCancelledSegment(resumed: Boolean): DictationState = if (resumed) Paused() else Idle
 }
