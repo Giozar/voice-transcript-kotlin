@@ -10,6 +10,16 @@ Después solo tienes que pegarlo con **⌘V** donde quieras: la Terminal, Codex 
 
 La bolita **no roba el foco**: el cursor sigue en la app donde estabas escribiendo.
 
+## Documentación
+
+| Documento | Para qué sirve |
+|---|---|
+| Este README | Qué es, requisitos, instalación desde GitHub y primeros pasos |
+| [docs/funcionamiento.md](docs/funcionamiento.md) | Cómo funciona: flujo de uso, audio, transcripción, modelos, permisos, errores y privacidad |
+| [docs/arquitectura.md](docs/arquitectura.md) | Arquitectura hexagonal y SOLID, máquina de estados, puente nativo y cómo ampliar el proyecto |
+| [docs/desarrollo.md](docs/desarrollo.md) | Entorno, scripts, pruebas, estructura del código y solución de problemas |
+| [docs/empaquetado-y-uso.md](docs/empaquetado-y-uso.md) | Generar el `.app` y el `.dmg`, instalar, usar y desinstalar |
+
 ---
 
 ## Índice
@@ -330,8 +340,9 @@ scripts/kt build
 1. **Sube el volumen de entrada del micrófono.** Ve a **Configuración del Sistema → Sonido → Entrada**, elige tu micrófono y lleva **el volumen de entrada al 100 %**. Con un volumen bajo (por ejemplo, 50 % con EarPods), el audio llega casi en silencio y la app responde "No se detectó voz".
 2. Desde `voice-transcript-kotlin/`, ejecuta:
    ```sh
-   scripts/kt run -m desktopApp --no-compose-hot-reload
+   scripts/dev.sh
    ```
+   Si faltan CMake o las bibliotecas nativas, el script los prepara antes de lanzar la app. Es equivalente a `scripts/kt run -m desktopApp --no-compose-hot-reload`.
    La terminal queda ocupada mientras la app está abierta. Ahí verás los registros.
 3. Aparece la **bolita** en la esquina inferior derecha, o en la última posición donde la dejaste:
    - **gris con un círculo girando:** está cargando el modelo (~10 s la primera vez, mientras se compilan los shaders de Metal);
@@ -520,6 +531,7 @@ voice-transcript-kotlin/
 │   │   └── ui/               BubbleWindow, PanelWindow, TrayMenu, tema
 │   └── test/                 pruebas del Resampler
 ├── native/                   CMakeLists.txt, whisper_bridge.c, macos_bridge.m
-└── scripts/                  env.sh, kt, setup-tools.sh, build-native.sh,
-                              download-model.sh, make-sample.sh
+├── docs/                     funcionamiento, arquitectura, desarrollo y empaquetado
+└── scripts/                  env.sh, kt, dev.sh, setup-tools.sh, build-native.sh,
+                              download-model.sh, make-sample.sh, package-macos.sh
 ```
