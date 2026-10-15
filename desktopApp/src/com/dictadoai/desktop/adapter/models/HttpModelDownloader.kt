@@ -9,7 +9,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
@@ -30,7 +30,7 @@ class HttpModelDownloader(private val modelsDir: File) : ModelDownloader {
         var offset = part.length()
         if (offset > 0) part.inputStream().use { hashAll(it, digest) } // el SHA-256 cubre todo el archivo, también lo ya bajado
 
-        val conn = URL(BASE_URL + model.fileName).openConnection() as HttpURLConnection
+        val conn = URI.create(BASE_URL + model.fileName).toURL().openConnection() as HttpURLConnection
         conn.connectTimeout = 15_000
         conn.readTimeout = 30_000
         if (offset > 0) conn.setRequestProperty("Range", "bytes=$offset-")

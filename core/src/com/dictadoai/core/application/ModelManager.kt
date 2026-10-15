@@ -8,8 +8,11 @@ import com.dictadoai.core.port.ModelRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -41,6 +44,11 @@ class ModelManager(
     private val tick = MutableStateFlow(0)
     private val downloads = MutableStateFlow<Map<String, Float>>(emptyMap())
     private val failures = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    private val _downloaded = MutableSharedFlow<WhisperModel>(extraBufferCapacity = 8)
+
+    /** Emite cada modelo cuya descarga termina bien. */
+    val downloaded: SharedFlow<WhisperModel> = _downloaded.asSharedFlow()
 
     /** Se recalcula al cambiar algo (lee el disco para saber qué está instalado). */
     val entries: StateFlow<List<ModelEntry>> = combine(tick, downloads, failures) { _, dl, fl ->
@@ -76,6 +84,7 @@ class ModelManager(
         scope.launch {
             try {
                 downloader.download(model) { progress -> downloads.update { it + (model.id to progress) } }
+                _downloaded.tryEmit(model)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

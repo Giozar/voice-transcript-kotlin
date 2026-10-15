@@ -50,6 +50,10 @@ class DictationController(
 
     /** Carga el modelo activo; si no hay ninguno descargado, pide elegir uno. */
     fun start() {
+        // Si no había modelo y se descarga uno, se carga solo: no hace falta reiniciar ni pulsar "Usar".
+        scope.launch {
+            models.downloaded.collect { if (_state.value == DictationState.NoModel) useModel(it) }
+        }
         val model = models.activeModel()
         if (model == null) dispatch(DictationEvent.ModelMissing) else loadModel(model)
     }

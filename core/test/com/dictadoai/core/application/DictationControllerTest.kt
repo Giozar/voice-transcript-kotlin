@@ -30,9 +30,11 @@ class DictationControllerTest {
     private val store = FakeActiveModelStore()
     private val downloader = FakeModelDownloader(repository)
 
+    private lateinit var models: ModelManager
+
     private fun TestScope.controller(maxMillis: Long = 600_000): DictationController {
         val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler) + SupervisorJob())
-        val models = ModelManager(repository, downloader, store, scope)
+        models = ModelManager(repository, downloader, store, scope)
         return DictationController(recorder, engine, clipboard, permission, models, scope, "es", maxMillis)
     }
 
@@ -292,6 +294,26 @@ class DictationControllerTest {
         assertEquals(Idle, c.state.value)
         assertEquals("tiny", engine.loadedModel?.id)
         assertEquals("tiny", store.saved)
+    }
+
+    @Test fun `a model downloaded while there is none is loaded automatically`() = runTest {
+        repository.installed.clear()
+        val c = controller()
+        ready(c)
+        assertEquals(NoModel, c.state.value)
+        models.download(WhisperCatalog.byId("tiny")!!)
+        advanceUntilIdle()
+        assertEquals(Idle, c.state.value)
+        assertEquals("tiny", engine.loadedModel?.id)
+    }
+
+    @Test fun `a model downloaded while another is in use does not replace it`() = runTest {
+        val c = controller()
+        ready(c)
+        models.download(WhisperCatalog.byId("tiny")!!)
+        advanceUntilIdle()
+        assertEquals(WhisperCatalog.DEFAULT_ID, engine.loadedModel?.id)
+        assertEquals(Idle, c.state.value)
     }
 
     @Test fun `after a failed model another one can be chosen`() = runTest {

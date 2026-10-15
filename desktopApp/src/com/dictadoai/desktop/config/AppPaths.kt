@@ -13,6 +13,8 @@ class AppPaths private constructor(
     val libDir: File,
     val modelsDir: File,
     val dataDir: File,
+    /** True en la app instalada (`dictado.appDir`), false en desarrollo. */
+    val isPackaged: Boolean,
 ) {
     companion object {
         fun resolve(
@@ -21,11 +23,11 @@ class AppPaths private constructor(
         ): AppPaths {
             props("dictado.appDir")?.let { appDir ->
                 val data = File(System.getProperty("user.home"), "Library/Application Support/DictadoAI")
-                return AppPaths(libDir = File(appDir, "lib"), modelsDir = File(data, "models"), dataDir = data)
+                return AppPaths(libDir = File(appDir, "lib"), modelsDir = File(data, "models"), dataDir = data, isPackaged = true)
             }
             env["DICTADO_DEV_HOME"]?.let { devHome ->
                 val root = File(devHome)
-                return AppPaths(libDir = File(root, "lib"), modelsDir = File(root, "models"), dataDir = File(root, "dev-data"))
+                return AppPaths(libDir = File(root, "lib"), modelsDir = File(root, "models"), dataDir = File(root, "dev-data"), isPackaged = false)
             }
             error("No se pudo resolver el entorno: define DICTADO_DEV_HOME (desarrollo) o dictado.appDir (app empaquetada)")
         }

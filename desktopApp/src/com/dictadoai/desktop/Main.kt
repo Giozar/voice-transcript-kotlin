@@ -35,6 +35,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.swing.Swing
 import java.awt.Point
 import java.io.File
+import java.io.FileOutputStream
+import java.io.PrintStream
 import javax.swing.SwingUtilities
 import kotlin.system.exitProcess
 import kotlin.system.measureTimeMillis
@@ -117,6 +119,14 @@ private fun recordAndTranscribe(seconds: Int): Unit = runBlocking {
     exitProcess(0)
 }
 
+/** La app instalada no tiene terminal: lo que imprime se guarda en `logs/dictadoai.log` para poder diagnosticar. */
+private fun redirectOutputToLog(dataDir: File) {
+    val logsDir = File(dataDir, "logs").also { it.mkdirs() }
+    val log = PrintStream(FileOutputStream(File(logsDir, "dictadoai.log"), true), true, "UTF-8")
+    System.setOut(log)
+    System.setErr(log)
+}
+
 /** Sonido del sistema para marcar el inicio y el fin de la grabación de prueba (no se graba). */
 private fun beep(name: String) {
     ProcessBuilder("afplay", "/System/Library/Sounds/$name.aiff").start().waitFor()
@@ -126,6 +136,7 @@ private fun beep(name: String) {
 private fun runApp() {
     System.setProperty("apple.awt.UIElement", "true") // sin icono en el Dock; antes de iniciar AWT
     val paths = AppPaths.resolve()
+    if (paths.isPackaged) redirectOutputToLog(paths.dataDir)
     val mac = MacosBridge.load(paths)
     val settingsFile = File(paths.dataDir, "config.properties")
     val positionStore = PropertiesBubblePositionStore(settingsFile)

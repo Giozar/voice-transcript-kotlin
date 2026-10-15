@@ -75,7 +75,7 @@ Kotlin llama a las `.dylib` mediante **JNA**.
 | Micrófono | Cualquiera: el integrado, los EarPods con jack, uno USB… |
 | Internet | Solo la **primera vez**, para descargar las dependencias y el modelo. Después funciona sin conexión. |
 | Command Line Tools de Xcode | Necesarias. Aportan `clang`, `git` y los SDK de macOS. Ver [3.1](#31-command-line-tools-de-xcode). |
-| JDK 21 | Necesario. Ver [3.2](#32-java-jdk-21). |
+| JDK 21 y JDK 25 | JDK 21 para los scripts y JDK 25 para empaquetar la app. Ver [3.2](#32-java-jdk-21). |
 | Kotlin Toolchain | **Ya viene incluido** en el proyecto (script `./kotlin`). Ver [3.3](#33-kotlin-toolchain). |
 | CMake | **No hay que instalarlo**: el proyecto lo descarga dentro de `.local/`. |
 
@@ -106,18 +106,18 @@ Estas tres herramientas se instalan **una sola vez por Mac**.
 
 > Xcode completo solo haría falta en el futuro, para compilar la versión **iOS**. La documentación del Kotlin Toolchain lo pide únicamente para los módulos de iOS.
 
-### 3.2 Java (JDK 21)
+### 3.2 Java (JDK 21 y 25)
 
-El proyecto usa **JDK 21**:
+El proyecto usa **JDK 21** para los scripts y **JDK 25** para empaquetar la app (el código se compila a Java 25):
 - `scripts/env.sh` lo selecciona con `/usr/libexec/java_home -v 21`;
-- `jpackage` lo necesita para generar el `.app`.
+- `scripts/package-macos.sh` usa `jpackage` del **JDK 25** para generar el `.app` (ver la [sección 6](#como-app-instalable-app--dmg)).
 
 1. Comprueba si ya lo tienes:
    ```sh
    /usr/libexec/java_home -V
    ```
    Debe aparecer una línea con `21.x`, por ejemplo `21.0.x (arm64) "Oracle Corporation" - "Java SE 21"`.
-2. Si no aparece, descarga el instalador **macOS ARM64 DMG** de JDK 21 desde una de estas páginas:
+2. Si no aparece, descarga el instalador **macOS ARM64 DMG** de JDK 21 (y de JDK 25, para empaquetar) desde una de estas páginas:
    - Oracle: <https://www.oracle.com/java/technologies/downloads/#java21>
    - Eclipse Temurin: <https://adoptium.net/temurin/releases/?version=21>
 
@@ -343,10 +343,47 @@ scripts/kt build
 
 ### Como app instalable (`.app` / `.dmg`)
 
-El empaquetado está en desarrollo. Usará `scripts/package-macos.sh`, que usa `jpackage` + `PlistBuddy` + `codesign` + `hdiutil`. Esta sección se completará cuando esa fase esté lista. Con la app empaquetada:
-- se abre como cualquier aplicación;
-- el permiso de micrófono se pide para "DictadoAI";
-- el modelo va dentro de la app.
+Para tener la app como cualquier otra aplicación de tu Mac, genera el `.app` y el `.dmg`:
+
+```sh
+cd ruta/a/voice-transcript-kotlin
+scripts/package-macos.sh
+```
+
+El script:
+1. compila el jar ejecutable (`scripts/kt package`);
+2. genera `DictadoAI.app` con `jpackage` del **JDK 25**, que incluye su propio Java: no necesitas tenerlo instalado para usar la app;
+3. añade a `Info.plist` que no aparezca en el Dock (`LSUIElement`) y el texto del permiso de micrófono;
+4. firma la app de forma ad hoc (sin notarizar);
+5. crea `DictadoAI.dmg` con la app y un acceso a **Aplicaciones**.
+
+Resultado, dentro de `.local/package/out/`:
+- `DictadoAI.app`
+- `DictadoAI.dmg` (unos 80 MB, sin el modelo de voz)
+
+**Instalar:** abre `DictadoAI.dmg` y arrastra **DictadoAI** a **Aplicaciones**.
+
+**Primera vez:**
+1. Abre **DictadoAI** desde Aplicaciones (o desde Launchpad).
+2. Como no hay modelo, el panel te avisa: pulsa **Elegir modelo**, luego **Descargar** en *Large v3 Turbo* (1.6 GB) y después **Usar**.
+   - Si ya tienes el modelo de desarrollo, puedes evitar la descarga copiándolo (un solo comando, en tu terminal):
+     ```sh
+     mkdir -p ~/"Library/Application Support/DictadoAI/models"
+     cp .local/models/ggml-large-v3-turbo.bin ~/"Library/Application Support/DictadoAI/models/"
+     ```
+3. Al dictar por primera vez, macOS pedirá permiso de micrófono para **DictadoAI** (no para la Terminal). Acéptalo.
+4. Para salir, usa **Salir** en el menú de la barra superior.
+
+Si macOS dice que no puede verificar la app, abre **Configuración del Sistema → Privacidad y seguridad**, baja hasta el aviso de DictadoAI y pulsa **Abrir igualmente**. Como la app se firma en tu propio Mac, normalmente no hace falta.
+
+**Dónde están tus datos** (no dentro de la app, así que sobreviven a las actualizaciones):
+- modelos: `~/Library/Application Support/DictadoAI/models/`
+- posición de la bolita y modelo elegido: `~/Library/Application Support/DictadoAI/config.properties`
+- registro de la app: `~/Library/Application Support/DictadoAI/logs/dictadoai.log`
+
+**Desinstalar:** borra `DictadoAI` de Aplicaciones. Si quieres borrar también los modelos y la configuración, borra la carpeta `~/Library/Application Support/DictadoAI`.
+
+**Arrancar al iniciar sesión:** Configuración del Sistema → General → Ítems de inicio → **+** → elige DictadoAI.
 
 ---
 
