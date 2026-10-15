@@ -2,6 +2,10 @@ package com.dictadoai.core.domain
 
 sealed interface DictationEvent {
     data object ModelLoaded : DictationEvent
+    data object ModelMissing : DictationEvent
+
+    /** La persona eligió un modelo descargado; se carga. */
+    data object ModelSelected : DictationEvent
     data class ModelFailed(val message: String) : DictationEvent
     data object BubbleClicked : DictationEvent
     data object ContinueRequested : DictationEvent

@@ -110,6 +110,7 @@ class BubbleWindow(
 
     private fun colorFor(s: DictationState): Color = when (s) {
         DictationState.LoadingModel -> DictadoColors.Loading
+        DictationState.NoModel -> DictadoColors.Warning
         is DictationState.ModelError -> DictadoColors.Error
         DictationState.Idle -> DictadoColors.Idle
         is DictationState.Starting, is DictationState.Recording -> DictadoColors.Recording

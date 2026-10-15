@@ -1,8 +1,9 @@
 package com.dictadoai.desktop.adapter.whisper
 
+import com.dictadoai.core.domain.WhisperModel
 import com.dictadoai.core.port.AudioClip
+import com.dictadoai.core.port.ModelRepository
 import com.dictadoai.core.port.TranscriptionEngine
-import com.dictadoai.desktop.config.AppPaths
 import com.sun.jna.Library
 import com.sun.jna.Native
 import com.sun.jna.Pointer
@@ -12,15 +13,17 @@ import java.io.File
 
 /** Motor de transcripción local: whisper.cpp con Metal, a través del puente en C. */
 class WhisperCppEngine(
-    private val paths: AppPaths,
+    private val libDir: File,
+    private val models: ModelRepository,
     private val threads: Int = 4,
 ) : TranscriptionEngine {
     private var bridge: WhisperBridge? = null
     private var context: Pointer? = null
 
-    override suspend fun load() = withContext(Dispatchers.IO) {
-        check(paths.modelFile.isFile) { "No se encontró el modelo de voz: ${paths.modelFile}" }
-        val lib = File(paths.libDir, "libdictado_whisper.dylib")
+    override suspend fun load(model: WhisperModel) = withContext(Dispatchers.IO) {
+        close() // si ya había un modelo cargado, se libera antes de cargar el nuevo
+        check(models.isInstalled(model)) { "El modelo ${model.displayName} no está descargado" }
+        val lib = File(libDir, "libdictado_whisper.dylib")
         check(lib.isFile) { "No se encontró la biblioteca nativa: $lib" }
 
         val loaded = Native.load(
@@ -28,8 +31,8 @@ class WhisperCppEngine(
             WhisperBridge::class.java,
             mapOf(Library.OPTION_STRING_ENCODING to "UTF-8"),
         )
-        context = loaded.dictado_whisper_init(paths.modelFile.absolutePath)
-            ?: error("No se pudo cargar el modelo de voz: ${paths.modelFile.name}")
+        context = loaded.dictado_whisper_init(models.locate(model))
+            ?: error("No se pudo cargar el modelo de voz: ${model.displayName}")
         bridge = loaded
     }
 

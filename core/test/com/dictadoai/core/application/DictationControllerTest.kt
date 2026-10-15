@@ -4,6 +4,7 @@ import com.dictadoai.core.domain.DictationState.*
 import com.dictadoai.core.domain.FailureKind
 import com.dictadoai.core.domain.Notice
 import com.dictadoai.core.domain.Purpose
+import com.dictadoai.core.domain.WhisperCatalog
 import com.dictadoai.core.port.AudioClip
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -16,6 +17,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -24,11 +26,15 @@ class DictationControllerTest {
     private val engine = FakeEngine()
     private val clipboard = FakeClipboard()
     private val permission = FakePermission()
+    private val repository = FakeModelRepository()
+    private val store = FakeActiveModelStore()
+    private val downloader = FakeModelDownloader(repository)
 
-    private fun TestScope.controller(maxMillis: Long = 600_000) = DictationController(
-        recorder, engine, clipboard, permission,
-        CoroutineScope(UnconfinedTestDispatcher(testScheduler) + SupervisorJob()), "es", maxMillis,
-    )
+    private fun TestScope.controller(maxMillis: Long = 600_000): DictationController {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler) + SupervisorJob())
+        val models = ModelManager(repository, downloader, store, scope)
+        return DictationController(recorder, engine, clipboard, permission, models, scope, "es", maxMillis)
+    }
 
     private suspend fun TestScope.ready(c: DictationController) { c.start(); advanceUntilIdle() }
 
@@ -43,7 +49,7 @@ class DictationControllerTest {
         assertEquals(Idle, c.state.value)
     }
 
-    @Test fun `model load failure leads to a terminal error`() = runTest {
+    @Test fun `model load failure shows an error and ignores clicks`() = runTest {
         engine.loadError = IllegalStateException("roto")
         val c = controller()
         ready(c)
@@ -266,5 +272,46 @@ class DictationControllerTest {
         ready(c)
         c.shutdown()
         assertTrue(engine.closed)
+    }
+
+    @Test fun `without an installed model it asks to choose one and loads nothing`() = runTest {
+        repository.installed.clear()
+        val c = controller()
+        ready(c)
+        assertEquals(NoModel, c.state.value)
+        assertNull(engine.loadedModel)
+    }
+
+    @Test fun `choosing an installed model loads it and remembers the choice`() = runTest {
+        repository.installed.clear()
+        repository.installed += "tiny"
+        val c = controller()
+        ready(c)
+        c.useModel(WhisperCatalog.byId("tiny")!!)
+        advanceUntilIdle()
+        assertEquals(Idle, c.state.value)
+        assertEquals("tiny", engine.loadedModel?.id)
+        assertEquals("tiny", store.saved)
+    }
+
+    @Test fun `after a failed model another one can be chosen`() = runTest {
+        engine.loadError = IllegalStateException("roto")
+        val c = controller()
+        ready(c)
+        assertEquals(ModelError("roto"), c.state.value)
+        engine.loadError = null
+        c.useModel(WhisperCatalog.byId(WhisperCatalog.DEFAULT_ID)!!)
+        advanceUntilIdle()
+        assertEquals(Idle, c.state.value)
+    }
+
+    @Test fun `a model cannot be chosen while recording`() = runTest {
+        val c = controller()
+        recording(c)
+        engine.loadedModel = null // solo nos interesa si se intenta cargar otro modelo
+        c.useModel(WhisperCatalog.byId("tiny")!!)
+        advanceUntilIdle()
+        assertEquals(Recording(resumed = false), c.state.value)
+        assertNull(engine.loadedModel)
     }
 }

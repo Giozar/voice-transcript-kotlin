@@ -7,6 +7,7 @@ import com.dictadoai.core.domain.RecordingLimits
 import com.dictadoai.core.domain.TranscriptCleaner
 import com.dictadoai.core.domain.TranscriptDocument
 import com.dictadoai.core.domain.TranscriptInserter
+import com.dictadoai.core.domain.WhisperModel
 import com.dictadoai.core.port.AudioRecorder
 import com.dictadoai.core.port.ClipboardWriter
 import com.dictadoai.core.port.MicUnavailableException
@@ -31,6 +32,7 @@ class DictationController(
     private val engine: TranscriptionEngine,
     private val clipboard: ClipboardWriter,
     private val permission: MicrophonePermission,
+    private val models: ModelManager,
     private val scope: CoroutineScope,
     private val language: String = "es",
     private val maxRecordingMillis: Long = RecordingLimits.MAX_MILLIS,
@@ -46,11 +48,26 @@ class DictationController(
 
     private var limitJob: Job? = null
 
-    /** Carga el modelo en segundo plano. */
+    /** Carga el modelo activo; si no hay ninguno descargado, pide elegir uno. */
     fun start() {
+        val model = models.activeModel()
+        if (model == null) dispatch(DictationEvent.ModelMissing) else loadModel(model)
+    }
+
+    /** Elige un modelo descargado y lo carga. Solo se acepta con la bolita libre o sin modelo. */
+    fun useModel(model: WhisperModel) {
+        if (!dispatch(DictationEvent.ModelSelected)) return
+        if (!models.select(model)) {
+            dispatch(DictationEvent.ModelFailed("El modelo ${model.displayName} no está descargado"))
+            return
+        }
+        loadModel(model)
+    }
+
+    private fun loadModel(model: WhisperModel) {
         scope.launch {
             try {
-                engine.load()
+                engine.load(model)
                 dispatch(DictationEvent.ModelLoaded)
             } catch (e: CancellationException) {
                 throw e

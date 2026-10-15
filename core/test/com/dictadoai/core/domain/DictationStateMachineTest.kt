@@ -18,8 +18,20 @@ class DictationStateMachineTest {
         assertNull(t(LoadingModel, BubbleClicked))
     }
 
-    @Test fun `model error ignores everything`() {
+    @Test fun `model error only accepts choosing another model`() {
         listOf(BubbleClicked, ModelLoaded, CloseRequested, CancelRequested).forEach { assertNull(t(ModelError("x"), it)) }
+        assertEquals(LoadingModel, t(ModelError("x"), ModelSelected))
+    }
+
+    @Test fun `without a model the user can choose one`() {
+        assertEquals(NoModel, t(LoadingModel, ModelMissing))
+        assertNull(t(NoModel, BubbleClicked))
+        assertEquals(LoadingModel, t(NoModel, ModelSelected))
+    }
+
+    @Test fun `choosing a model from idle loads it`() {
+        assertEquals(LoadingModel, t(Idle, ModelSelected))
+        assertNull(t(Recording(resumed = false), ModelSelected))
     }
 
     @Test fun `click on idle starts a new session`() {

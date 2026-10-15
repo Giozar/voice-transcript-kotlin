@@ -256,7 +256,11 @@ ls -la .local/lib
 
 > Mientras la app esté abierta, no vuelvas a compilar los nativos: macOS cerraría la app al cambiar una biblioteca que está en uso.
 
-### Paso 4: Descargar el modelo de Whisper (una vez, ~1.6 GB)
+### Paso 4: Descargar un modelo de voz
+
+Puedes hacerlo **desde la propia app** (menú de la barra → **Modelos…**, ver la [sección 7](#modelos-de-voz)). Ahí eliges el tamaño que quieras.
+
+Si prefieres hacerlo desde la terminal, el modelo recomendado (Large v3 Turbo, ~1.6 GB) también se descarga con:
 
 ```sh
 scripts/download-model.sh
@@ -364,6 +368,35 @@ Consejos:
 
 ---
 
+### Modelos de voz
+
+El modelo de voz es lo que convierte tu voz en texto. Puedes cambiarlo en cualquier momento desde el menú de la barra superior → **Modelos…**. Son modelos Whisper multilingües (sirven para español):
+
+| Modelo | Tamaño | Uso recomendado |
+|---|---|---|
+| Tiny | 78 MB | Solo para probar; precisión baja |
+| Base | 148 MB | Ligero, precisión básica |
+| Small | 488 MB | Equilibrado para equipos modestos |
+| Medium | 1.5 GB | Buena precisión, más lento |
+| Large v3 Turbo (q5) | 574 MB | Como Turbo, comprimido: ocupa menos y usa menos memoria |
+| **Large v3 Turbo** | **1.6 GB** | **Recomendado**: muy buena precisión con buena velocidad |
+| Large v3 | 3.1 GB | La mayor precisión; lento y pesado |
+
+En la pantalla de modelos:
+- **Descargar:** baja el modelo con una barra de progreso. Si se corta, vuelve a pulsarlo: **se reanuda** donde quedó. Al terminar se verifica su SHA-256.
+- **Usar:** lo convierte en el modelo activo. Solo se puede cambiar con la bolita libre (no mientras grabas o transcribes). Tarda unos segundos en cargarse.
+- **Eliminar:** borra el archivo para liberar espacio. No se puede eliminar el modelo que está en uso.
+
+Si no tienes ningún modelo descargado, la bolita abre directamente esta pantalla.
+
+Dónde se guardan:
+- en desarrollo: `voice-transcript-kotlin/.local/models/`;
+- en la app instalada: `~/Library/Application Support/DictadoAI/models/`.
+
+El modelo elegido se guarda en `config.properties`, junto con la posición de la bolita.
+
+---
+
 ## 8. Modos de diagnóstico
 
 Sirven para comprobar Whisper o el micrófono sin la interfaz.
@@ -398,7 +431,7 @@ Mediciones de referencia en un Mac mini M4:
 | `src/whisper.cpp/` | Código de whisper.cpp v1.9.5 | `build-native.sh` |
 | `native-build/` | Compilación intermedia de CMake | `build-native.sh` |
 | `lib/` | `libdictado_whisper.dylib`, `libdictado_macos.dylib` | `build-native.sh` |
-| `models/` | `ggml-large-v3-turbo.bin` | `download-model.sh` |
+| `models/` | Modelos Whisper descargados (ver [Modelos de voz](#modelos-de-voz)) | La app, o `download-model.sh` para el recomendado |
 | `dev-data/` | `config.properties` (posición de la bolita) | La app |
 | `samples/` | `prueba-es.wav` | `make-sample.sh` |
 | `tmp/`, `skiko/`, `jna/` | Temporales de Java, Compose y JNA | `env.sh` |
@@ -412,7 +445,9 @@ Para empezar de cero, borra `.local/` y repite la sección 4. Si quieres evitar 
 | Problema | Causa probable | Solución |
 |---|---|---|
 | "No se detectó voz" aunque hablaste | Volumen de entrada bajo o micrófono equivocado | Configuración del Sistema → Sonido → Entrada: elige el micrófono correcto y sube el volumen al 100 %. Prueba con `--record 5`: un RMS menor que 0.005 se considera silencio. |
-| "No se pudo cargar el modelo de voz" | Falta el modelo o está dañado | `scripts/download-model.sh`. Si sigue fallando, borra `.local/models/` y vuelve a descargarlo. |
+| "No se pudo cargar el modelo de voz" | El modelo está dañado o no se pudo cargar | Menú **Modelos…** → **Elegir modelo**: elige otro, o elimina el actual y descárgalo de nuevo. |
+| "No hay modelo de voz" | No hay ningún modelo descargado | Abre **Modelos…** y descarga uno (recomendado: Large v3 Turbo). |
+| "La descarga no coincide con el SHA-256" | La descarga se corrompió | Pulsa **Reintentar**: el archivo parcial se borró y se empieza de nuevo. |
 | Error al cargar `libdictado_*.dylib` | Faltan los nativos | `scripts/build-native.sh` |
 | La app se cierra sola (código 137) justo después de compilar los nativos | Se reemplazó una `.dylib` mientras la app la usaba | Cierra la app y vuelve a abrirla. |
 | macOS no pide permiso de micrófono, o graba silencio | El permiso se denegó a la Terminal | Configuración del Sistema → Privacidad y seguridad → Micrófono → activa tu terminal y reiníciala. |

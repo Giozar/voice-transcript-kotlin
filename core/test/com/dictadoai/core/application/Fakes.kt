@@ -1,5 +1,6 @@
 package com.dictadoai.core.application
 
+import com.dictadoai.core.domain.WhisperModel
 import com.dictadoai.core.port.AudioClip
 import com.dictadoai.core.port.AudioRecorder
 import com.dictadoai.core.port.ClipboardWriter
@@ -41,11 +42,15 @@ class FakeEngine : TranscriptionEngine {
     private var call = 0
     var transcribeCalls = 0
     var closed = false
+    var loadedModel: WhisperModel? = null
 
     /** Si no es nulo, `transcribe` espera a que se complete (para observar el estado Transcribing). */
     var gate: CompletableDeferred<Unit>? = null
 
-    override suspend fun load() { loadError?.let { throw it } }
+    override suspend fun load(model: WhisperModel) {
+        loadError?.let { throw it }
+        loadedModel = model
+    }
 
     override suspend fun transcribe(clip: AudioClip, language: String): String {
         transcribeCalls++

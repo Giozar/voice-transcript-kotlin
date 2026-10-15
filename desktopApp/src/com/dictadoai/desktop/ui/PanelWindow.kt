@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.focus.FocusRequester
@@ -36,20 +39,25 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dictadoai.core.application.DictationController
+import com.dictadoai.core.application.ModelEntry
+import com.dictadoai.core.application.ModelManager
+import com.dictadoai.core.application.ModelStatus
 import com.dictadoai.core.domain.DictationState
 import com.dictadoai.core.domain.FailureKind
 import com.dictadoai.core.domain.Notice
+import com.dictadoai.core.domain.WhisperModel
 import com.dictadoai.core.port.ClipboardWriter
 import com.dictadoai.desktop.adapter.macos.MacosBridge
 import com.dictadoai.desktop.adapter.macos.configureFloating
 import java.awt.Point
 
 /**
- * Panel junto a la bolita: controles durante la grabación y texto editable de la sesión.
- * Normalmente no toma el foco; solo lo toma mientras la persona edita el texto (botón "Editar").
+ * Panel junto a la bolita: controles durante la grabación, texto editable de la sesión y la pantalla de modelos.
+ * Normalmente no toma el foco; solo lo toma mientras la persona edita el texto (al hacer clic en él).
  */
 class PanelWindow(
     private val controller: DictationController,
+    private val models: ModelManager,
     private val clipboard: ClipboardWriter,
     private val mac: MacosBridge,
     private val bubble: BubbleWindow,
@@ -59,6 +67,7 @@ class PanelWindow(
 
     private var editing by mutableStateOf(false)
     private var field by mutableStateOf(TextFieldValue(""))
+    private var showingModels by mutableStateOf(false)
     private var currentHeight = 0
 
     fun create() {
@@ -69,8 +78,10 @@ class PanelWindow(
     fun update(state: DictationState) {
         val editable = state is DictationState.Paused || state is DictationState.Result
         if (!editable) leaveEditing()
+        // Si la persona empieza a dictar mientras miraba los modelos, se vuelve al flujo normal.
+        if (!canChangeModel(state) && state !is DictationState.LoadingModel) showingModels = false
 
-        val height = heightFor(state)
+        val height = if (showingModels) HEIGHT_MODELS else heightFor(state)
         if (height == null) {
             window.isVisible = false
             return
@@ -82,6 +93,13 @@ class PanelWindow(
             window.isVisible = true
             mac.configureFloating(TITLE)
         }
+    }
+
+    /** Abre la pantalla de modelos. Solo con la bolita libre, sin modelo o con un modelo que falló. */
+    fun openModels() {
+        if (!canChangeModel(controller.state.value)) return
+        showingModels = true
+        update(controller.state.value)
     }
 
     /** Coloca el panel junto a la bolita, hacia el lado con más espacio en pantalla. */
@@ -102,6 +120,7 @@ class PanelWindow(
 
     private fun heightFor(s: DictationState): Int? = when (s) {
         DictationState.Idle, DictationState.LoadingModel -> null
+        DictationState.NoModel -> HEIGHT_COMPACT
         is DictationState.ModelError -> HEIGHT_COMPACT
         is DictationState.Starting -> if (s.resumed) HEIGHT_SESSION else HEIGHT_COMPACT
         is DictationState.Recording -> if (s.resumed) HEIGHT_SESSION else HEIGHT_COMPACT
@@ -150,6 +169,11 @@ class PanelWindow(
         action()
     }
 
+    private fun closeModels() {
+        showingModels = false
+        update(controller.state.value)
+    }
+
     @Composable
     private fun PanelContent() {
         val state by controller.state.collectAsState()
@@ -170,9 +194,16 @@ class PanelWindow(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    when (val s = state) {
+                    if (showingModels) {
+                        ModelsView(state)
+                    } else when (val s = state) {
                         DictationState.Idle, DictationState.LoadingModel -> Unit
-                        is DictationState.ModelError -> Message("No se pudo cargar el modelo de voz", s.message) { CloseButton() }
+                        DictationState.NoModel -> Message("No hay modelo de voz", "Descarga uno para empezar a dictar.") {
+                            Button(onClick = { act { openModels() } }) { Text("Elegir modelo") }
+                        }
+                        is DictationState.ModelError -> Message("No se pudo cargar el modelo de voz", s.message) {
+                            Button(onClick = { act { openModels() } }) { Text("Elegir modelo") }
+                        }
                         is DictationState.Starting ->
                             if (s.resumed) Session(header = { Title("Preparando micrófono…") }, hint = null, textEditable = false) {}
                             else Title("Preparando micrófono…")
@@ -218,6 +249,52 @@ class PanelWindow(
                         ) { CloseButton() }
                         is DictationState.Failure -> FailureView(s.kind)
                     }
+                }
+            }
+        }
+    }
+
+    /** Pantalla de modelos: lista del catálogo con descargar, usar y eliminar. */
+    @Composable
+    private fun ModelsView(state: DictationState) {
+        val entries by models.entries.collectAsState()
+        val canChange = canChangeModel(state)
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Title("Modelos de voz")
+                TextButton(onClick = { act { closeModels() } }) { Text("Cerrar") }
+            }
+            Text(
+                if (state is DictationState.LoadingModel) "Cargando el modelo elegido…"
+                else "Se guardan en tu Mac. El modelo en uso es el que dicta.",
+                fontSize = 12.sp,
+                color = DictadoColors.PanelText.copy(alpha = 0.7f),
+            )
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(entries, key = { it.model.id }) { entry -> ModelRow(entry, canChange) }
+            }
+        }
+    }
+
+    @Composable
+    private fun ModelRow(entry: ModelEntry, canChange: Boolean) {
+        val m: WhisperModel = entry.model
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text("${m.displayName} · ${formatSize(m.sizeBytes)}", fontSize = 13.sp, color = DictadoColors.PanelText)
+                Text(m.description, fontSize = 11.sp, color = DictadoColors.PanelText.copy(alpha = 0.7f))
+            }
+            when (val st = entry.status) {
+                ModelStatus.NotInstalled -> Button(onClick = { models.download(m) }) { Text("Descargar") }
+                is ModelStatus.Downloading -> Text("Descargando ${(st.progress * 100).toInt()} %", fontSize = 12.sp)
+                ModelStatus.Installed -> Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(enabled = canChange, onClick = { controller.useModel(m) }) { Text("Usar") }
+                    TextButton(onClick = { models.delete(m) }) { Text("Eliminar") }
+                }
+                ModelStatus.Active -> Text("En uso", fontSize = 12.sp, color = DictadoColors.PanelText.copy(alpha = 0.7f))
+                is ModelStatus.Failed -> Column(horizontalAlignment = Alignment.End) {
+                    Text("Error al descargar", fontSize = 12.sp, color = DictadoColors.Error)
+                    TextButton(onClick = { models.download(m) }) { Text("Reintentar") }
                 }
             }
         }
@@ -325,7 +402,15 @@ class PanelWindow(
         const val HEIGHT_TRANSCRIBING = 100
         const val HEIGHT_MIC_DENIED = 190
         const val HEIGHT_SESSION = 300
+        const val HEIGHT_MODELS = 470
         const val LIMIT_TEXT = "Se alcanzó el límite de 10 minutos."
         const val EDIT_HINT = "Haz clic en el texto para editarlo; lo nuevo se dicta donde esté el cursor."
+
+        /** Solo se puede cambiar de modelo con la bolita libre, sin modelo o con un modelo que falló. */
+        private fun canChangeModel(s: DictationState) =
+            s is DictationState.Idle || s is DictationState.NoModel || s is DictationState.ModelError
+
+        private fun formatSize(bytes: Long): String =
+            if (bytes >= 1_000_000_000) "%.1f GB".format(bytes / 1e9) else "%d MB".format(bytes / 1_000_000)
     }
 }

@@ -10,8 +10,11 @@ sealed interface DictationState {
     /** El modelo de voz se está cargando. */
     data object LoadingModel : DictationState
 
-    /** El modelo no se pudo cargar. Estado terminal: se ignoran todos los eventos. */
+    /** El modelo no se pudo cargar. Solo se acepta elegir otro modelo. */
     data class ModelError(val message: String) : DictationState
+
+    /** No hay ningún modelo descargado: hay que elegir o descargar uno. */
+    data object NoModel : DictationState
 
     /** Solo se ve la bolita. */
     data object Idle : DictationState

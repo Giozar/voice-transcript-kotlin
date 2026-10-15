@@ -11,13 +11,23 @@ object DictationStateMachine {
         LoadingModel -> when (event) {
             ModelLoaded -> Idle
             is ModelFailed -> ModelError(event.message)
+            ModelMissing -> NoModel
             else -> null
         }
 
-        is ModelError -> null
+        is ModelError -> when (event) {
+            ModelSelected -> LoadingModel
+            else -> null
+        }
+
+        NoModel -> when (event) {
+            ModelSelected -> LoadingModel
+            else -> null
+        }
 
         Idle -> when (event) {
             BubbleClicked -> Starting(resumed = false)
+            ModelSelected -> LoadingModel
             else -> null
         }
 

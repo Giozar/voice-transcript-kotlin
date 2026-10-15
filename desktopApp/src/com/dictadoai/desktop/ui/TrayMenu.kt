@@ -8,11 +8,12 @@ import java.awt.SystemTray
 import java.awt.TrayIcon
 import java.awt.image.BufferedImage
 
-/** Icono en la barra de menús con la opción "Salir". */
-class TrayMenu(private val onExit: () -> Unit) {
+/** Icono en la barra de menús con las opciones "Modelos…" y "Salir". */
+class TrayMenu(private val onModels: () -> Unit, private val onExit: () -> Unit) {
     fun install() {
         if (!SystemTray.isSupported()) return
         val menu = PopupMenu().apply {
+            add(MenuItem("Modelos…").apply { addActionListener { onModels() } })
             add(MenuItem("Salir").apply { addActionListener { onExit() } })
         }
         val icon = TrayIcon(createIcon(), "DictadoAI", menu).apply { isImageAutoSize = true }
