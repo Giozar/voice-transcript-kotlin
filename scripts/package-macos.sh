@@ -8,6 +8,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_VERSION="1.0.0"
 PKG="$ROOT/.local/package"
 PACKAGE_JDK="$(/usr/libexec/java_home -v 25)" # el código se compila a Java 25: jpackage debe usar ese JDK
+# java_home no falla si falta el JDK 25: devuelve el más reciente que haya. Se comprueba la versión real.
+JDK_MAJOR="$(sed -n 's/^JAVA_VERSION="\([0-9]*\).*/\1/p' "$PACKAGE_JDK/release")"
+if [ "${JDK_MAJOR:-0}" -lt 25 ]; then
+  echo "Para empaquetar hace falta el JDK 25 (el código se compila a Java 25). Encontrado: JDK ${JDK_MAJOR:-desconocido} en $PACKAGE_JDK" >&2
+  exit 1
+fi
 APP="$PKG/out/DictadoAI.app"
 PLIST="$APP/Contents/Info.plist"
 

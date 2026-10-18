@@ -26,7 +26,7 @@ Siempre desde la raíz del repositorio.
 
 | Script | Qué hace |
 |---|---|
-| `scripts/env.sh` | `source scripts/env.sh`: define `JAVA_HOME` (JDK 21), el `PATH` con CMake, `DICTADO_DEV_HOME` y redirige los temporales a `.local/`. |
+| `scripts/env.sh` | `source scripts/env.sh`: define `JAVA_HOME` (el JDK 25 del sistema), el `PATH` con CMake, `DICTADO_DEV_HOME` y redirige los temporales a `.local/`. |
 | `scripts/kt` | Ejecuta el Kotlin Toolchain con el entorno cargado y su caché en `.local/`. Se usa en lugar de `./kotlin`. |
 | `scripts/setup-tools.sh` | Descarga CMake con verificación de SHA-256. |
 | `scripts/build-native.sh` | Compila whisper.cpp y los dos puentes a `.local/lib/`. |
@@ -130,7 +130,7 @@ Cómo se explica y se justifica esto está en [arquitectura.md](arquitectura.md)
 | Error al cargar `libdictado_*.dylib` | Faltan los nativos | `scripts/build-native.sh` |
 | `cmake: command not found` | No se cargó el entorno | `source scripts/env.sh` y `scripts/setup-tools.sh` |
 | `xcrun: error: invalid active developer path` | Faltan las Command Line Tools | `xcode-select --install` |
-| `Unable to find any JVMs matching version "21"` | Falta el JDK 21 | Instálalo (ver README, sección 3.2) |
+| `Para empaquetar hace falta el JDK 25` | El JDK 25 no está instalado | Instálalo (ver README, sección 3.2) |
 | Dos bolitas | Dos instancias abiertas (por ejemplo, desarrollo e instalada) | Sal de una con **Salir** |
 | La bolita roba el foco | La ventana no se creó como panel | Revisa `FloatingWindows.kt` y que `configureFloating` devuelva 0 |
 

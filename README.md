@@ -85,7 +85,7 @@ Kotlin llama a las `.dylib` mediante **JNA**.
 | Micrófono | Cualquiera: el integrado, los EarPods con jack, uno USB… |
 | Internet | Solo la **primera vez**, para descargar las dependencias y el modelo. Después funciona sin conexión. |
 | Command Line Tools de Xcode | Necesarias. Aportan `clang`, `git` y los SDK de macOS. Ver [3.1](#31-command-line-tools-de-xcode). |
-| JDK 21 y JDK 25 | JDK 21 para los scripts y JDK 25 para empaquetar la app. Ver [3.2](#32-java-jdk-21). |
+| JDK 25 | Solo para empaquetar la app (`scripts/package-macos.sh`). Compilar y ejecutar usa el Java que trae el propio toolchain. Ver [3.2](#32-java-jdk-25). |
 | Kotlin Toolchain | **Ya viene incluido** en el proyecto (script `./kotlin`). Ver [3.3](#33-kotlin-toolchain). |
 | CMake | **No hay que instalarlo**: el proyecto lo descarga dentro de `.local/`. |
 
@@ -116,31 +116,34 @@ Estas tres herramientas se instalan **una sola vez por Mac**.
 
 > Xcode completo solo haría falta en el futuro, para compilar la versión **iOS**. La documentación del Kotlin Toolchain lo pide únicamente para los módulos de iOS.
 
-### 3.2 Java (JDK 21 y 25)
+### 3.2 Java (JDK 25)
 
-El proyecto usa **JDK 21** para los scripts y **JDK 25** para empaquetar la app (el código se compila a Java 25):
-- `scripts/env.sh` lo selecciona con `/usr/libexec/java_home -v 21`;
-- `scripts/package-macos.sh` usa `jpackage` del **JDK 25** para generar el `.app` (ver la [sección 6](#como-app-instalable-app--dmg)).
+El código se compila a **Java 25**. Hay que distinguir dos casos:
+
+- **Compilar y ejecutar** (`scripts/kt`, `scripts/dev.sh`): usa el Java 25 que descarga el Kotlin Toolchain dentro de `.local/kotlin-cli/`. **No necesitas instalar nada para esto.**
+- **Empaquetar** (`scripts/package-macos.sh`): `jpackage` necesita el **JDK 25 instalado en tu sistema**. Se elige con `/usr/libexec/java_home -v 25`. La app generada lleva su propio Java 25 dentro, así que quien use la app tampoco necesita Java instalado.
+
+Solo necesitas un JDK 25 en tu Mac si vas a empaquetar la app:
 
 1. Comprueba si ya lo tienes:
    ```sh
    /usr/libexec/java_home -V
    ```
-   Debe aparecer una línea con `21.x`, por ejemplo `21.0.x (arm64) "Oracle Corporation" - "Java SE 21"`.
-2. Si no aparece, descarga el instalador **macOS ARM64 DMG** de JDK 21 (y de JDK 25, para empaquetar) desde una de estas páginas:
-   - Oracle: <https://www.oracle.com/java/technologies/downloads/#java21>
-   - Eclipse Temurin: <https://adoptium.net/temurin/releases/?version=21>
+   Debe aparecer una línea con `25.x`, por ejemplo `25.0.x (arm64) "Oracle Corporation" - "Java SE 25"`.
+2. Si no aparece, descarga el instalador **macOS ARM64 DMG** de JDK 25 desde una de estas páginas:
+   - Oracle: <https://www.oracle.com/java/technologies/downloads/#java25>
+   - Eclipse Temurin: <https://adoptium.net/temurin/releases/?version=25>
 
    Ábrelo y sigue el asistente. Queda instalado en `/Library/Java/JavaVirtualMachines/`.
 3. Verifica:
    ```sh
-   /usr/libexec/java_home -v 21
+   "$(/usr/libexec/java_home -v 25)/bin/java" -version
    ```
-   Debe imprimir la ruta del JDK 21.
+   Debe decir `25`. (`java_home -v 25` por sí solo no sirve para comprobarlo: si falta el JDK 25, devuelve el más reciente que tengas.)
 
-Puedes tener otras versiones instaladas (17 o 25); no estorban. Los scripts del proyecto siempre eligen la 21 sin cambiar tu Java por defecto.
+Si tienes otras versiones de Java instaladas, no estorban: el empaquetado siempre elige la 25.
 
-> El Kotlin Toolchain descarga **su propio** Java (dentro de `.local/kotlin-cli`) para ejecutarse a sí mismo. Ese Java es independiente del JDK 21.
+> El Kotlin Toolchain descarga **su propio** Java (dentro de `.local/kotlin-cli`) para ejecutarse a sí mismo. Ese Java es independiente del JDK del sistema.
 
 ### 3.3 Kotlin Toolchain
 
@@ -215,7 +218,7 @@ source scripts/env.sh
 
 Este comando:
 - crea las subcarpetas de `.local/`;
-- exporta `JAVA_HOME` (JDK 21), `KOTLIN_CLI_BOOTSTRAP_CACHE_DIR` y `DICTADO_DEV_HOME`;
+- exporta `JAVA_HOME` (el JDK 25 del sistema), `KOTLIN_CLI_BOOTSTRAP_CACHE_DIR` y `DICTADO_DEV_HOME`;
 - añade CMake al `PATH`;
 - envía los temporales de Java, Skiko y JNA a `.local/`.
 
@@ -499,7 +502,7 @@ Para empezar de cero, borra `.local/` y repite la sección 4. Si quieres evitar 
 | Error al cargar `libdictado_*.dylib` | Faltan los nativos | `scripts/build-native.sh` |
 | La app se cierra sola (código 137) justo después de compilar los nativos | Se reemplazó una `.dylib` mientras la app la usaba | Cierra la app y vuelve a abrirla. |
 | macOS no pide permiso de micrófono, o graba silencio | El permiso se denegó a la Terminal | Configuración del Sistema → Privacidad y seguridad → Micrófono → activa tu terminal y reiníciala. |
-| `java_home: Unable to find any JVMs matching version "21"` | JDK 21 no está instalado | Ver [3.2](#32-java-jdk-21). |
+| `Para empaquetar hace falta el JDK 25` | El JDK 25 no está instalado | Instálalo (ver [3.2](#32-java-jdk-25)). |
 | `xcrun: error: invalid active developer path` | Faltan las Command Line Tools | `xcode-select --install` |
 | `cmake: command not found` | No se ejecutó `setup-tools.sh` o no cargaste el entorno | `scripts/setup-tools.sh` y `source scripts/env.sh` |
 | Dos bolitas en pantalla | Hay dos instancias abiertas | Sal de ambas desde la barra de menús y abre una sola. |
