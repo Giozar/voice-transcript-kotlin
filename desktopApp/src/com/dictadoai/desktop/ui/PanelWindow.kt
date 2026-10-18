@@ -50,6 +50,9 @@ import com.dictadoai.core.port.ClipboardWriter
 import com.dictadoai.desktop.adapter.macos.MacosBridge
 import com.dictadoai.desktop.adapter.macos.configureFloating
 import java.awt.Point
+import java.awt.event.WindowAdapter
+import java.awt.event.WindowEvent
+import javax.swing.SwingUtilities
 
 /**
  * Panel junto a la bolita: controles durante la grabación, texto editable de la sesión y la pantalla de modelos.
@@ -71,7 +74,16 @@ class PanelWindow(
     private var currentHeight = 0
 
     fun create() {
-        window = createFloatingComposeWindow(TITLE, WIDTH, HEIGHT_COMPACT).apply { setContent { PanelContent() } }
+        window = createFloatingComposeWindow(TITLE, WIDTH, HEIGHT_COMPACT).apply {
+            setContent { PanelContent() }
+            addWindowFocusListener(object : WindowAdapter() {
+                // Si la persona hace clic en otra app mientras edita, se sale del modo edición sin quitarle
+                // el foco. Si no, el panel se queda "editando" sin teclado y no responde al volver.
+                override fun windowLostFocus(e: WindowEvent) {
+                    SwingUtilities.invokeLater { if (editing && !isFocused) leaveEditing(restoreFocus = false) }
+                }
+            })
+        }
     }
 
     /** Muestra, oculta y redimensiona el panel según el estado. */
@@ -140,12 +152,15 @@ class PanelWindow(
         window.requestFocus()
     }
 
-    /** Al pulsar cualquier botón: el panel deja de aceptar teclado y el foco vuelve a la app anterior. */
-    private fun leaveEditing() {
+    /**
+     * Al pulsar cualquier botón: el panel deja de aceptar teclado y el foco vuelve a la app anterior.
+     * Con [restoreFocus] = false (la persona ya se fue a otra app) no se toca el foco.
+     */
+    private fun leaveEditing(restoreFocus: Boolean = true) {
         if (!editing) return
         editing = false
         setFocusable(false)
-        mac.dictado_macos_restore_focus() // devuelve el foco a la app donde se va a pegar
+        if (restoreFocus) mac.dictado_macos_restore_focus() // devuelve el foco a la app donde se va a pegar
     }
 
     /**
